@@ -6,7 +6,8 @@ on:
 
 jobs:
   bump:
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    # Strict check: only run if NOT a chore commit and NOT from the bot
+    if: "!startsWith(github.event.head_commit.message, 'chore:') && github.actor != 'github-actions[bot]'"
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -32,6 +33,7 @@ jobs:
 
       - name: Bump version
         run: |
-          bump2version patch --allow-dirty --verbose
+          # Use [skip ci] in the commit message to prevent loops
+          bump2version patch --allow-dirty --verbose --commit-args="--message 'chore: bump version to {new_version} [skip ci]'"
           git push origin main
           git push origin --tags
