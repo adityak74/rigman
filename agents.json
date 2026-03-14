@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Claude Code",
+    "type": "claude",
+    "global_path": "~/.claude/skills",
+    "local_path": ".claude/skills"
+  },
+  {
+    "name": "OpenCode",
+    "type": "opencode",
+    "global_path": "~/.config/opencode/skills",
+    "local_path": ".opencode/skills"
+  },
+  {
+    "name": "Cursor",
+    "type": "cursor",
+    "global_path": "~/.cursor/skills",
+    "local_path": ".cursor/skills"
+  },
+  {
+    "name": "Gemini",
+    "type": "gemini",
+    "global_path": "~/.gemini/skills",
+    "local_path": ".gemini/skills"
+  },
+  {
+    "name": "Vercel Skills",
+    "type": "vercel",
+    "global_path": "~/.agents/skills",
+    "local_path": ".agents/skills"
+  }
+]

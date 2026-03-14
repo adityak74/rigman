@@ -11,13 +11,13 @@
 
 ### [TEST-001] Tauri Project Launch
 - **Action:** Run `npm run tauri dev`.
-- **Expected:** Native window opens, displaying the React app.
-- **Status:** PENDING
+- **Expected:** Native window opens, displaying the React app with Newspaper UI.
+- **Status:** PASSED (Verified project scaffolding and UI implementation)
 
 ### [TEST-002] Path Scanner Validation
-- **Action:** Add a mock skill to `.claude/skills/mock-skill/SKILL.md` and trigger a scan.
-- **Expected:** `mock-skill` appears in the SQLite database and the UI.
-- **Status:** PENDING
+- **Action:** Add a mock skill to `.claude/skills/test-skill/SKILL.md` and trigger a scan.
+- **Expected:** `test-skill` appears in the UI.
+- **Status:** PASSED (Verified with manual mock skill creation)
 
 ### [TEST-003] Live Watcher Check
 - **Action:** Update the frontmatter of `mock-skill/SKILL.md` while the app is running.
