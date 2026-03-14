@@ -41,7 +41,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Rigman v${{ github.ref_name }}'
+          releaseName: 'Rigman ${{ github.ref_name }}'
           releaseBody: 'Intelligence Bureau Release'
           releaseDraft: true
           prerelease: false
