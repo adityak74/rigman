@@ -3468,7 +3468,7 @@ dependencies = [
 
 [[package]]
 name = "rigman"
-version = "1.0.12"
+version = "1.0.0"
 dependencies = [
  "dirs",
  "notify",
