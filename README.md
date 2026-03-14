@@ -9,6 +9,8 @@
 
 ---
 
+## 🗞️ Latest Release: [v1.0.14](https://github.com/adityak74/rigman/releases/latest)
+
 ## 🚀 Quick Start
 
 Get your intelligence bureau running in less than 60 seconds.
