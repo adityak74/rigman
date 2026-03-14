@@ -35,13 +35,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Get Version
+        id: get_version
+        shell: bash
+        run: |
+          # Strip 'v' from tag name if it exists
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Rigman ${{ github.ref_name }}'
+          tagName: v${{ steps.get_version.outputs.version }}
+          releaseName: 'Rigman v${{ steps.get_version.outputs.version }}'
           releaseBody: 'Intelligence Bureau Release'
           releaseDraft: true
           prerelease: false
