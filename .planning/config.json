@@ -1,0 +1,12 @@
+{
+  "project_name": "rigman",
+  "workflow": "gsd",
+  "status": "initializing",
+  "auto_mode": true,
+  "config": {
+    "frontend": "React (TypeScript)",
+    "backend": "Tauri (Rust)",
+    "database": "SQLite",
+    "styling": "Tailwind + shadcn-ui"
+  }
+}
