@@ -48,7 +48,7 @@ jobs:
       - name: Build the app
         uses: tauri-apps/tauri-action@v0.5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           tagName: v${{ steps.get_version.outputs.version }}
           releaseName: 'Rigman v${{ steps.get_version.outputs.version }}'
