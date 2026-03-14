@@ -6,11 +6,6 @@ on:
 
 jobs:
   release:
-    permissions:
-      contents: write
-      pull-requests: write
-      repository-projects: write
-      releases: write
     strategy:
       fail-fast: false
       matrix:
