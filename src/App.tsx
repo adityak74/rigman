@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { save } from "@tauri-apps/plugin-dialog";
-import { Search, Folder, Globe, Loader2, X, Download, ShieldCheck, CheckCircle, Save, AlertCircle, Archive, FileJson } from "lucide-react";
+import { Search, Folder, Globe, Loader2, X, Download, ShieldCheck, CheckCircle, Save, AlertCircle, Archive, FileJson, Zap } from "lucide-react";
 import MDEditor from '@uiw/react-md-editor';
 import jsYaml from 'js-yaml';
 import agentsData from "../agents.json";
@@ -24,6 +24,22 @@ interface MarketplaceSkill {
   skillName: string;
 }
 
+interface RemoteSkill {
+  id: string; // owner/repo@skill
+  url: string;
+  installs?: string;
+}
+
+// Utility to strip ANSI escape codes from terminal output
+const stripAnsi = (str: string) => {
+  const pattern = [
+    '[\\u001B\\u009B][[\\]()#;?]*((?:[a-zA-Z\\d\\/]*[-_a-zA-Z\\d\\/]*[:=a-zA-Z\\d\\/;#]*)?',
+    '(?:[\\dA-PR-TZcf-ntqry=><~]))'
+  ].join('|');
+  const regex = new RegExp(pattern, 'g');
+  return str.replace(regex, '');
+};
+
 function App() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [search, setSearch] = useState("");
@@ -36,10 +52,13 @@ function App() {
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
   const [editorContent, setEditorContent] = useState<string>("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("SYSTEM_READY");
   const [saving, setSaving] = useState(false);
 
-  // Status Bar State
-  const [status, setStatus] = useState<string>("SYSTEM_READY");
+  // Remote Search State
+  const [remoteSearch, setRemoteSearch] = useState("");
+  const [remoteResults, setRemoteResults] = useState<RemoteSkill[]>([]);
+  const [isSearchingRemote, setIsSearchingRemote] = useState(false);
 
   const marketplaceSkills: MarketplaceSkill[] = [
     { name: "React Best Practices", skillName: "vercel-react-best-practices", repo: "https://github.com/vercel-labs/agent-skills.git", description: "40+ rules for React and Next.js performance. Optimizes bundle size, data fetching, and rendering.", agent: "claude-code" },
@@ -114,10 +133,9 @@ function App() {
 
       if (filePath) {
         setStatus("COMPRESSING_ASSETS");
-        // Skill paths are folders (parent of SKILL.md)
         const skillFolders = skills.map(s => {
           const pathParts = s.path.split('/');
-          pathParts.pop(); // Remove SKILL.md
+          pathParts.pop();
           return pathParts.join('/');
         });
 
@@ -136,15 +154,19 @@ function App() {
     }
   };
 
-  const handleInstall = async (skill: MarketplaceSkill) => {
-    setInstalling(skill.skillName);
+  const handleInstall = async (skill: MarketplaceSkill | RemoteSkill) => {
+    const skillName = 'skillName' in skill ? skill.skillName : skill.id.split('@')[1] || skill.id;
+    const repo = 'repo' in skill ? skill.repo : skill.id;
+    const agent = 'agent' in skill ? skill.agent : 'claude-code';
+
+    setInstalling(skillName);
     setStatus("DEPLOYING_ASSET");
     try {
-      const command = Command.create("npx", ["skills", "add", skill.repo, "--agent", skill.agent, "-y"]);
+      const command = Command.create("npx", ["skills", "add", repo, "--agent", agent, "-y"]);
       const output = await command.execute();
       if (output.code === 0) {
         setStatus("OK: ASSET_DEPLOYED");
-        alert(`SUCCESS: ${skill.name} deployed.`);
+        alert(`SUCCESS: ${skillName} deployed.`);
         await handleScan(); 
       } else {
         setStatus("ERR: DEPLOY_FAILED");
@@ -156,6 +178,85 @@ function App() {
     }
     setInstalling(null);
     setPreviewSkill(null);
+  };
+
+  const handleRemoteSearch = async () => {
+    if (!remoteSearch) return;
+    
+    // Check if the user pasted a GitHub URL directly
+    const githubUrlPattern = /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+(\.git)?$/;
+    if (githubUrlPattern.test(remoteSearch)) {
+      // If it's a direct link, construct a dummy skill object to trigger installation
+      const repoName = remoteSearch.split('/').pop()?.replace('.git', '') || 'unknown-repo';
+      const dummySkill: RemoteSkill = {
+        id: `custom/${repoName}@latest`,
+        url: remoteSearch,
+        installs: "New"
+      };
+      
+      // Directly invoke the install handler
+      await handleInstall(dummySkill);
+      setRemoteSearch(""); // Clear the input after triggering install
+      return;
+    }
+
+    setIsSearchingRemote(true);
+    setStatus("QUERYING_GLOBAL_REGISTRY");
+    try {
+      // Use the native fetch API to get rich metadata from Vercel Skills
+      const response = await fetch(`https://skills.sh/api/search?q=${encodeURIComponent(remoteSearch)}`);
+      const data = await response.json();
+      
+      if (data.skills && Array.isArray(data.skills)) {
+        const results: RemoteSkill[] = data.skills.slice(0, 12).map((skill: any) => ({
+          id: skill.id,
+          url: `https://skills.sh/${skill.id}`,
+          installs: skill.installs >= 1000 ? `${(skill.installs / 1000).toFixed(1)}K` : skill.installs.toString(),
+          description: `A highly rated skill from ${skill.source} for ${skill.name}.` // Fallback description
+        }));
+        
+        setRemoteResults(results);
+        setStatus(`OK: FOUND_${data.skills.length}_RESULTS`);
+      } else {
+        setRemoteResults([]);
+        setStatus("OK: NO_RESULTS_FOUND");
+      }
+    } catch (error) {
+      console.error("API Search failed, falling back to CLI", error);
+      // Fallback to CLI if API fails (e.g. CORS issues)
+      try {
+        const command = Command.create("npx", ["skills", "find", remoteSearch]);
+        const output = await command.execute();
+        
+        const cleanOutput = stripAnsi(output.stdout);
+        const lines = cleanOutput.split('\n');
+        const results: RemoteSkill[] = [];
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (line.includes('@')) {
+            const parts = line.split(' ');
+            const id = parts[0];
+            let installs = "";
+            const installIndex = parts.indexOf("installs");
+            if (installIndex > 0) {
+              installs = parts[installIndex - 1];
+            }
+            
+            const nextLine = lines[i+1]?.trim() || "";
+            const url = nextLine.startsWith('└') ? nextLine.split(' ')[1] : "";
+            
+            results.push({ id, installs, url });
+          }
+        }
+        
+        setRemoteResults(results);
+        setStatus(`OK: FOUND_${results.length}_RESULTS`);
+      } catch (cliError) {
+        setStatus("ERR: REGISTRY_QUERY_FAILED");
+      }
+    }
+    setIsSearchingRemote(false);
   };
 
   const handleRemove = async (skill: Skill) => {
@@ -256,6 +357,31 @@ function App() {
           <div className="mb-8">
             <h2 className="text-4xl font-bold italic mb-4 leading-none">{view === 'archive' ? 'Latest Intelligence' : 'Global Dispatch'}</h2>
             <hr className="border-zinc-900 border-t-2 mb-6" />
+            
+            {view === 'marketplace' && (
+              <div className="mb-10 flex gap-4 bg-zinc-100 p-4 border-2 border-zinc-900 shadow-[4px_4px_0_0_#000]">
+                <div className="relative flex-1">
+                  <Globe className="absolute left-3 top-3 h-4 w-4 text-zinc-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Search Global Registry (e.g. 'python', 'jest', 'mcp')..." 
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-zinc-300 focus:border-zinc-900 outline-none text-sm font-sans"
+                    value={remoteSearch}
+                    onChange={(e) => setRemoteSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRemoteSearch()}
+                  />
+                </div>
+                <button 
+                  onClick={handleRemoteSearch}
+                  disabled={isSearchingRemote}
+                  className="bg-zinc-900 text-white px-6 py-2 font-sans font-bold uppercase text-xs tracking-widest hover:bg-zinc-800 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isSearchingRemote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  Intercept
+                </button>
+              </div>
+            )}
+
             {loading && !editingSkill ? (
               <div className="py-24 text-center text-2xl italic animate-pulse opacity-50">Processing reports...</div>
             ) : view === 'archive' ? (
@@ -280,25 +406,63 @@ function App() {
                 </div>
               )
             ) : (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-10">
-                {filteredMarketplace.map((skill, i) => {
-                  const installed = isInstalled(skill.skillName);
-                  return (
-                    <article key={i} className="group flex flex-col border-2 border-zinc-900 p-4 bg-white shadow-[8px_8px_0_0_#18181b] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[10px_10px_0_0_#18181b] transition-all">
-                      <div className="flex justify-between items-baseline mb-3 border-b border-zinc-200 pb-1">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.2em] font-sans px-1.5 py-0.5 bg-zinc-900 text-white">{skill.agent}</span>
-                        <span className="text-[10px] text-zinc-500 italic font-sans font-bold uppercase tracking-tight">Vercel Registry</span>
-                      </div>
-                      <h3 className="text-2xl font-bold group-hover:underline cursor-pointer mb-2 leading-tight">{skill.name}</h3>
-                      <p className="text-[10px] font-mono mb-2 text-zinc-500 uppercase tracking-widest">{skill.skillName}</p>
-                      <p className="text-sm text-zinc-700 line-clamp-3 mb-4 italic leading-relaxed">{skill.description}</p>
-                      <div className="mt-auto flex gap-4 text-[10px] font-bold uppercase font-sans tracking-widest border-t border-zinc-900 pt-3">
-                        {installed ? <div className="flex items-center gap-2 text-emerald-700 px-3 py-1 border border-emerald-700 font-sans text-[9px] font-bold uppercase tracking-wider"><CheckCircle className="h-3 w-3" />Deployed</div> : <button onClick={() => handleInstall(skill)} disabled={installing === skill.skillName} className="bg-zinc-900 text-white px-3 py-1 hover:bg-zinc-700 transition-colors disabled:opacity-50 flex items-center gap-2">{installing === skill.skillName ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}{installing === skill.skillName ? 'Processing...' : 'Install'}</button>}
-                        <button onClick={() => setPreviewSkill(skill)} className="hover:underline decoration-2 underline-offset-4">Preview</button>
-                      </div>
-                    </article>
-                  );
-                })}
+              <div className="space-y-12">
+                {/* Curated Section */}
+                {remoteResults.length === 0 && (
+                  <div className="grid grid-cols-2 gap-x-12 gap-y-10">
+                    {filteredMarketplace.map((skill, i) => {
+                      const installed = isInstalled(skill.skillName);
+                      return (
+                        <article key={i} className="group flex flex-col border-2 border-zinc-900 p-4 bg-white shadow-[8px_8px_0_0_#18181b] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[10px_10px_0_0_#18181b] transition-all">
+                          <div className="flex justify-between items-baseline mb-3 border-b border-zinc-200 pb-1">
+                            <span className="text-[9px] font-bold uppercase tracking-[0.2em] font-sans px-1.5 py-0.5 bg-zinc-900 text-white">{skill.agent}</span>
+                            <span className="text-[10px] text-zinc-500 italic font-sans font-bold uppercase tracking-tight">Curated Intel</span>
+                          </div>
+                          <h3 className="text-2xl font-bold group-hover:underline cursor-pointer mb-2 leading-tight">{skill.name}</h3>
+                          <p className="text-[10px] font-mono mb-2 text-zinc-500 uppercase tracking-widest">{skill.skillName}</p>
+                          <p className="text-sm text-zinc-700 line-clamp-3 mb-4 italic leading-relaxed">{skill.description}</p>
+                          <div className="mt-auto flex gap-4 text-[10px] font-bold uppercase font-sans tracking-widest border-t border-zinc-900 pt-3">
+                            {installed ? <div className="flex items-center gap-2 text-emerald-700 px-3 py-1 border border-emerald-700 font-sans text-[9px] font-bold uppercase tracking-wider"><CheckCircle className="h-3 w-3" />Deployed</div> : <button onClick={() => handleInstall(skill)} disabled={installing === skill.skillName} className="bg-zinc-900 text-white px-3 py-1 hover:bg-zinc-700 transition-colors disabled:opacity-50 flex items-center gap-2">{installing === skill.skillName ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}{installing === skill.skillName ? 'Processing...' : 'Install'}</button>}
+                            <button onClick={() => setPreviewSkill(skill)} className="hover:underline decoration-2 underline-offset-4">Preview</button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Remote Search Results */}
+                {remoteResults.length > 0 && (
+                  <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-bold italic underline decoration-4">Intercepted Intelligence ({remoteResults.length})</h3>
+                      <button onClick={() => setRemoteResults([])} className="text-xs font-sans font-bold uppercase hover:underline">Clear Search</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-12 gap-y-10">
+                      {remoteResults.map((skill, i) => {
+                        const skillName = skill.id.split('@')[1] || skill.id;
+                        const installed = isInstalled(skillName);
+                        return (
+                          <article key={i} className="group flex flex-col border-2 border-zinc-900 p-4 bg-zinc-50 shadow-[8px_8px_0_0_#3f3f46] hover:bg-white transition-all">
+                            <div className="flex justify-between items-baseline mb-3 border-b border-zinc-200 pb-1">
+                              <span className="text-[9px] font-bold uppercase tracking-[0.2em] font-sans px-1.5 py-0.5 bg-zinc-700 text-white">Global Registry</span>
+                              <span className="text-[10px] text-zinc-500 italic font-sans font-bold uppercase tracking-tight">{skill.installs} installs</span>
+                            </div>
+                            <h3 className="text-xl font-bold group-hover:underline cursor-pointer mb-2 leading-tight break-all">{skill.id}</h3>
+                            <p className="text-[10px] font-mono mb-2 text-zinc-500 truncate">{skill.url}</p>
+                            {skill.description && (
+                              <p className="text-sm text-zinc-700 line-clamp-3 mb-4 italic leading-relaxed">{skill.description}</p>
+                            )}
+                            <div className="mt-auto flex gap-4 text-[10px] font-bold uppercase font-sans tracking-widest border-t border-zinc-900 pt-3">
+                              {installed ? <div className="flex items-center gap-2 text-emerald-700 px-3 py-1 border border-emerald-700 font-sans text-[9px] font-bold uppercase tracking-wider"><CheckCircle className="h-3 w-3" />Deployed</div> : <button onClick={() => handleInstall(skill)} disabled={installing === skillName} className="bg-zinc-900 text-white px-3 py-1 hover:bg-zinc-700 transition-colors disabled:opacity-50 flex items-center gap-2">{installing === skillName ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}{installing === skillName ? 'Deploying...' : 'Install'}</button>}
+                              <a href={skill.url} target="_blank" rel="noopener noreferrer" className="hover:underline decoration-2 underline-offset-4 flex items-center gap-1">Source</a>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
           </div>
@@ -351,7 +515,7 @@ function App() {
             </div>
             <footer className="mt-8 flex justify-end gap-6 border-t-2 border-zinc-900 pt-6">
               <button onClick={() => setPreviewSkill(null)} className="font-sans font-bold uppercase text-[10px] tracking-widest hover:underline">Cancel</button>
-              {isInstalled(previewSkill.skillName) ? <div className="flex items-center gap-2 text-emerald-700 px-8 py-3 font-sans font-bold uppercase text-xs tracking-[0.2em] border-2 border-emerald-700"><CheckCircle className="h-4 w-4" />Successfully Deployed</div> : <button onClick={() => handleInstall(previewSkill)} disabled={installing === previewSkill.skillName} className="bg-zinc-900 text-white px-8 py-3 font-sans font-bold uppercase text-xs tracking-[0.2em] hover:bg-zinc-800 transition-colors flex items-center gap-2">{installing === previewSkill.skillName ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}{installing === previewSkill.skillName ? 'Processing Deployment...' : 'Deploy to Agent'}</button>}
+              {isInstalled(previewSkill.skillName) ? <div className="flex items-center gap-2 text-emerald-700 px-8 py-3 font-sans font-bold uppercase text-xs tracking-[0.2em] border-2 border-emerald-700"><CheckCircle className="h-4 w-4" />Successfully Deployed</div> : <button onClick={() => handleInstall(previewSkill)} disabled={installing === previewSkill.skillName} className="bg-zinc-900 text-white px-8 py-3 font-sans font-bold uppercase text-xs tracking-[0.2em] hover:bg-zinc-800 transition-colors flex items-center gap-2">{installing === previewSkill.skillName ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} {installing === previewSkill.skillName ? 'Processing Deployment...' : 'Deploy to Agent'}</button>}
             </footer>
           </div>
         </div>
