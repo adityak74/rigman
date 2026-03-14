@@ -6,6 +6,7 @@ on:
 
 jobs:
   bump:
+    # Prevent infinite loop by skipping commits made by the bot
     if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
     runs-on: ubuntu-latest
     permissions:
@@ -17,21 +18,42 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.x'
-
-      - name: Install bump2version
-        run: pip install bump2version
+          node-version: 20
 
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version
+      - name: Manual Bump Version
+        id: bump
         run: |
-          bump2version patch --allow-dirty --verbose
+          # Read current version
+          CURRENT_VERSION=$(cat VERSION)
+          echo "Current: $CURRENT_VERSION"
+          
+          # Increment patch version
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          NEW_VERSION="$major.$minor.$((patch + 1))"
+          echo "New: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          # Update files
+          echo "$NEW_VERSION" > VERSION
+          sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/g" package.json
+          sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/g" src-tauri/tauri.conf.json
+          sed -i "s/^version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/g" src-tauri/Cargo.toml
+          sed -i "s/current_version = $CURRENT_VERSION/current_version = $NEW_VERSION/g" .bumpversion.cfg
+
+      - name: Commit and Push
+        run: |
+          NEW_VERSION=${{ steps.bump.outputs.version }}
+          git add .
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
           git push origin main
-          git push origin --tags
+          
+          git tag "v$NEW_VERSION"
+          git push origin "v$NEW_VERSION"
