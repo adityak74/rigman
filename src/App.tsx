@@ -205,12 +205,11 @@ function App() {
     <div className="min-h-screen bg-[#fcfaf7] text-zinc-900 p-8 selection:bg-zinc-900 selection:text-white font-serif flex flex-col" data-color-mode="light">
       <header className="border-b-4 border-zinc-900 pb-4 mb-8">
         <div className="flex justify-between items-baseline border-b border-zinc-300 pb-1 mb-2 text-[10px] font-bold uppercase tracking-[0.2em] font-sans">
-          <span>Vol. I — No. 01</span>
-          <span>Friday, March 13, 2026</span>
           <div className="flex gap-4">
             <button onClick={() => setView('archive')} className={`${view === 'archive' ? 'underline decoration-2' : 'opacity-50'} hover:opacity-100 transition-opacity`}>Archive</button>
             <button onClick={() => setView('marketplace')} className={`${view === 'marketplace' ? 'underline decoration-2' : 'opacity-50'} hover:opacity-100 transition-opacity`}>Marketplace</button>
           </div>
+          <span className="opacity-50 italic">Rigman Protocol v1.0</span>
         </div>
         <h1 className="text-8xl font-black text-center tracking-tighter uppercase mb-4 transition-all duration-500 transform hover:scale-[1.01]">Rigman</h1>
         <div className="flex justify-between items-center border-t border-zinc-300 pt-2 text-sm italic">
