@@ -60,4 +60,4 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-Built with ❤️ by [Aditya Karnam](https://github.com/adityakarnam)
+Built with ❤️ by [Aditya Karnam](https://adityakarnam.com/)
