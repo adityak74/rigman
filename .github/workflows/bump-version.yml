@@ -68,6 +68,9 @@ jobs:
           git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
           git push origin main
           
-          # Create and push the release tag
+      - name: Create and Push Tag
+        run: |
+          NEW_VERSION=${{ steps.bump.outputs.version }}
+          # Separating the tag push from the commit push ensures it triggers other workflows
           git tag "v$NEW_VERSION"
           git push origin "v$NEW_VERSION"
